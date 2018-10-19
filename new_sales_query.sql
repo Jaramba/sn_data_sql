@@ -2,46 +2,36 @@ WITH sales_pipeline AS (
 	SELECT 
  		DATE(orders.create_date )		AS "Date",
  		orders.state 					AS "State",
- 		client_type."name" 				AS "Client Type",
- 		branches."name" 				AS "Branch Name",
- 		employees."name" 				AS "Sales Person",
- 		orders.amount_total 			AS "Gross Amount",
- 		orders.amount_net_sales 		AS "Net Sales",
+ 		branches."name" 				AS "BranchName",
+ 		employees."name" 				AS "SalesPerson",
+ 		orders.amount_total 			AS "GrossAmount",
+ 		orders.amount_net_sales 		AS "NetAmount",
  		orders.company_id 				AS "Country",
- 		'Orders' ::TEXT 				AS "Pipeline Stage"
+ 		'Orders' ::TEXT 				AS "PipelineStage"
  	FROM 
  		sale_order AS orders
 	LEFT JOIN res_branch AS branches ON
 		branches.id  = orders.branch_id
 	LEFT JOIN sale_order_type AS client_type ON
 		client_type.id = orders.order_type
-	LEFT JOIN res_partner AS  customers ON 
-	 	customers.id = orders.partner_id
 	LEFT JOIN res_users AS sales_people ON 
 		sales_people.id = orders.user_id
 	 LEFT JOIN res_partner AS employees ON  
 	  	employees.id = sales_people.partner_id
-	 LEFT JOIN product_pricelist AS products ON 
-	 	orders.pricelist_id = products.id
-	 LEFT JOIN account_payment_term AS terms ON 
-	 	terms.id = orders.payment_term
 	WHERE 
-	  	date(orders.create_date) >= '2015-01-01' AND
+	  	date(orders.create_date) >= '2016-01-01' AND
 		orders.amount_total > 0
 ),
  draft_revenue_all as(
 	SELECT 
 	 	date (invoices.create_date)		AS "Date",
-	 	invoices.state					AS "State",
- 		client_type."name" 				AS "Client Type",
-   		branches."name"					AS "Branch Name",
-   		employees."name" 				AS "Sales Person",
-  		invoices.amount_total        	AS "Gross Amount",
-   		invoices.amount_net_invoice  	AS "Net Amount",
+	 	tickets.state_install			AS "State",
+   		branches."name"					AS "BranchName",
+   		employees."name" 				AS "SalesPerson",
+  		invoices.amount_total        	AS "GrossAmount",
+   		invoices.amount_net_invoice  	AS "NetAmount",
    		invoices.company_id          	AS "Country", 
-   		'Invoices' ::TEXT 				AS "Pipeline Stage",
-   		'Revenue' ::TEXT 				AS "Revenue",
-   		tickets.state_install 			AS "Install",
+   		'Installation' ::TEXT 			AS "PipelineStage",
    		(ROW_NUMBER () OVER (PARTITION BY invoices.partner_id ORDER BY tickets.create_date DESC)) AS "Numbers"
 	FROM  
  		account_invoice AS  invoices
@@ -49,18 +39,12 @@ WITH sales_pipeline AS (
 		branches.id  = invoices.branch
 	LEFT JOIN  sale_order AS  orders ON 
    		invoices.sale_order = orders.id
-	LEFT JOIN sale_order_type AS client_type ON
-		client_type.id = orders.order_type
 	LEFT JOIN res_partner AS  customers ON 
 	 	customers.id = invoices.partner_id
 	LEFT JOIN  res_users AS  sales_people ON  
 		sales_people.id = orders.user_id
 	 LEFT JOIN res_partner AS  employees ON  
 	  	employees.id = sales_people.partner_id
-	 LEFT JOIN product_pricelist AS products ON 
-	 	orders.pricelist_id = products.id
-	 LEFT JOIN account_payment_term AS terms ON 
-	 	terms.id = orders.payment_term
 	 LEFT JOIN ticket_ticket AS tickets ON
 	 	tickets.partner_id = invoices.partner_id
 	WHERE  
@@ -72,31 +56,27 @@ WITH sales_pipeline AS (
 draft_revenue as (
 	SELECT
 		"Date",
-	 	 "State",
- 		"Client Type",
-   		 "Branch Name",
-   		"Sales Person",
-  		"Gross Amount",
-   		 "Net Amount",
+	 	"State",
+   		"BranchName",
+   		"SalesPerson",
+  		"GrossAmount",
+   		"NetAmount",
    		"Country", 
-   		"Pipeline Stage"
-   	
-
+   		"PipelineStage"
 	 FROM draft_revenue_all
 	WHERE 
 		"Numbers" = 1 AND
-		"Install" IN ('open','stock_given_out','installed')
+		"State" IN ('open','stock_given_out','installed','in_complete')
  
 ),
-installed_revenue as (
+verified_revenue as (
 	SELECT  
 	 	invoices.date_invoice 			AS"Date",
 	 	invoices.state					AS "State",
- 		client_type."name" 				AS "Client Type",
-   		branches."name"					AS "Branch Name",
-   		employees."name" 				AS "Sales Person",
-  		invoices.amount_total        	AS "Gross Amount",
-   		invoices.amount_net_invoice  	AS "Net Amount",
+   		branches."name"					AS "BranchName",
+   		employees."name" 				AS "SalesPerson",
+  		invoices.amount_total        	AS "GrossAmount",
+   		invoices.amount_net_invoice  	AS "NetAmount",
    		invoices.company_id          	AS "Country", 
    		'Invoices' ::TEXT 				AS "Pipeline Stage"
    		
@@ -106,18 +86,10 @@ installed_revenue as (
 		branches.id  = invoices.branch
 	LEFT JOIN  sale_order AS  orders ON 
    		invoices.sale_order = orders.id
-	LEFT JOIN sale_order_type AS client_type ON
-		client_type.id = orders.order_type
-	LEFT JOIN res_partner AS  customers ON 
-	 	customers.id = invoices.partner_id
 	LEFT JOIN  res_users AS  sales_people ON  
 		sales_people.id = orders.user_id
 	 LEFT JOIN res_partner AS  employees ON  
 	  	employees.id = sales_people.partner_id
-	 LEFT JOIN product_pricelist AS products ON 
-	 	orders.pricelist_id = products.id
-	 LEFT JOIN account_payment_term AS terms ON 
-	 	terms.id = orders.payment_term
 	WHERE  
   		invoices."type" = 'out_invoice' AND 
   		invoices.state IN ('open','paid') AND
@@ -128,18 +100,27 @@ merged_all AS (
 		FROM  sales_pipeline
 		UNION  ALL
 		SELECT  *
-		FROM  installed_revenue
+		FROM  verified_revenue
 		UNION  ALL
 		SELECT  *
 		FROM  draft_revenue
 )
 
-SELECT *
+SELECT
+	"Date",
+	"State",
+   	"BranchName",
+   	"SalesPerson",
+  	SUM("GrossAmount") 	AS "GrossAmount",
+   	SUM("NetAmount")	AS "NetAmount",
+   	"Country", 
+   	"PipelineStage"
 FROM merged_all
+GROUP BY 
+	"Date",
+	"State",
+   	"BranchName",
+   	"SalesPerson",
+  	"Country", 
+   	"PipelineStage"
 
-
-
-
-
-
-		
